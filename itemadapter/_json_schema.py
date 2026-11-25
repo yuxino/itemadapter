@@ -11,7 +11,7 @@ from copy import copy
 from enum import Enum
 from functools import lru_cache
 from textwrap import dedent
-from types import MappingProxyType, NoneType, UnionType
+from types import MappingProxyType, UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -583,21 +583,20 @@ ATTRS_NUMBER_VALIDATORS = {
 }
 
 
-def update_prop_from_length(
-    prop: dict[str, Any], field_type: object, prefix: str, value: int
-) -> None:
-    types = get_args(field_type) if get_origin(field_type) in UNION_TYPES else (field_type,)
-    for member in types:
-        if member is NoneType:
-            continue
-        base = get_origin(member) or member
-        if base is str:
-            suffix = "Length"
-        elif isinstance(base, type) and isinstance(base, ObjectProtocol):
-            suffix = "Properties"
-        else:
-            suffix = "Items"
-        prop.setdefault(f"{prefix}{suffix}", value)
+LENGTH_SUFFIXES = {
+    "string": "Length",
+    "object": "Properties",
+    "array": "Items",
+}
+
+
+def update_prop_from_length(prop: dict[str, Any], prefix: str, value: int) -> None:
+    for subschema in prop.get("anyOf", (prop,)):
+        schema_type = subschema.get("type", "")
+        types = schema_type if isinstance(schema_type, list) else (schema_type,)
+        for type_name in types:
+            if suffix := LENGTH_SUFFIXES.get(type_name):
+                prop.setdefault(f"{prefix}{suffix}", value)
 
 
 def _update_attrs_prop_validation(
@@ -620,9 +619,9 @@ def _update_attrs_prop_validation(
         elif validator_type_name == "_InValidator":
             prop.setdefault("enum", list(validator.options))
         elif validator_type_name == "_MinLengthValidator":
-            update_prop_from_length(prop, field.type, "min", validator.min_length)
+            update_prop_from_length(prop, "min", validator.min_length)
         elif validator_type_name == "_MaxLengthValidator":
-            update_prop_from_length(prop, field.type, "max", validator.max_length)
+            update_prop_from_length(prop, "max", validator.max_length)
         elif validator_type_name == "_MatchesReValidator":
             pattern = json_schema_pattern(validator.pattern)
             if pattern is not None:
@@ -718,7 +717,7 @@ def _update_pydantic_prop(
     elif "default" in metadata and metadata["default"] is not PydanticUndefined:
         prop.setdefault("default", metadata["default"])
     if "metadata" in metadata:
-        _update_pydantic_prop_validation(prop, metadata["metadata"], field_type)
+        _update_pydantic_prop_validation(prop, metadata["metadata"])
     for metadata_key, json_schema_field in (
         ("title", "title"),
         ("description", "description"),
@@ -733,7 +732,6 @@ def _update_pydantic_prop(
 def _update_pydantic_prop_validation(
     prop: dict[str, Any],
     metadata: Sequence[Any],
-    field_type: object,
 ) -> None:
     for metadata_item in metadata:
         metadata_item_type = type(metadata_item).__name__
@@ -742,9 +740,9 @@ def _update_pydantic_prop_validation(
                 pattern = metadata_item.__dict__["pattern"]
                 update_prop_from_pattern(prop, pattern)
         elif metadata_item_type == "MinLen":
-            update_prop_from_length(prop, field_type, "min", metadata_item.min_length)
+            update_prop_from_length(prop, "min", metadata_item.min_length)
         elif metadata_item_type == "MaxLen":
-            update_prop_from_length(prop, field_type, "max", metadata_item.max_length)
+            update_prop_from_length(prop, "max", metadata_item.max_length)
         else:
             for metadata_key, json_schema_field in (
                 ("ge", "minimum"),

@@ -110,20 +110,45 @@ class TestAttrs:
 
     @requires_attrs
     def test_json_schema_mapping_length(self):
+        import dataclasses
+
         import attrs
         from attrs import validators
+
+        @dataclasses.dataclass
+        class Nested:
+            x: int
 
         @attrs.define
         class ItemClass:
             counts: dict[str, int] = attrs.field(
                 validator=[validators.min_len(1), validators.max_len(2)]
             )
+            text: str | None = attrs.field(validator=validators.min_len(1))
+            mixed: str | int = attrs.field(validator=validators.min_len(1))
+            nested: Nested = attrs.field(validator=validators.min_len(1))
 
-        assert ItemAdapter.get_json_schema(ItemClass)["properties"]["counts"] == {
+        props = ItemAdapter.get_json_schema(ItemClass)["properties"]
+        assert props["counts"] == {
             "type": "object",
             "additionalProperties": {"type": "integer"},
             "minProperties": 1,
             "maxProperties": 2,
+        }
+        assert props["text"] == {
+            "type": ["null", "string"],
+            "minLength": 1,
+        }
+        assert props["mixed"] == {
+            "type": ["integer", "string"],
+            "minLength": 1,
+        }
+        assert props["nested"] == {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"x": {"type": "integer"}},
+            "required": ["x"],
+            "minProperties": 1,
         }
 
     @requires_attrs

@@ -176,12 +176,19 @@ class TestPydantic:
     def test_json_schema_mapping_length(self):
         from itemadapter._imports import pydantic
 
+        class Nested(pydantic.BaseModel):
+            x: int
+
         class Model(pydantic.BaseModel):
             counts: Mapping[str, int] | list[int] | None = pydantic.Field(
                 min_length=1, max_length=2
             )
+            text: str | None = pydantic.Field(min_length=1)
+            mixed: str | int = pydantic.Field(min_length=1)
+            nested: Nested = pydantic.Field(min_length=1)
 
-        assert ItemAdapter.get_json_schema(Model)["properties"]["counts"] == {
+        props = ItemAdapter.get_json_schema(Model)["properties"]
+        assert props["counts"] == {
             "anyOf": [
                 {"type": "null"},
                 {"type": "object", "additionalProperties": {"type": "integer"}},
@@ -191,6 +198,20 @@ class TestPydantic:
             "maxProperties": 2,
             "minItems": 1,
             "maxItems": 2,
+        }
+        assert props["text"] == {
+            "type": ["null", "string"],
+            "minLength": 1,
+        }
+        assert props["mixed"] == {
+            "type": ["integer", "string"],
+            "minLength": 1,
+        }
+        assert props["nested"] == {
+            "type": "object",
+            "properties": {"x": {"type": "integer"}},
+            "required": ["x"],
+            "minProperties": 1,
         }
 
     @requires_pydantic
